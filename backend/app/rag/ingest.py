@@ -4,8 +4,8 @@
 import os
 import pandas as pd
 from dotenv import load_dotenv
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
@@ -45,7 +45,7 @@ def ingest():
     vectorstore = FAISS.from_documents(chunks, embeddings) # embeds all chunks
     vectorstore.save_local("data/faiss_index") # stores all vectors like a library so we can search through fast! :-)
     
-    print("🌸 done!")
+    print("🪷 done!")
 
 if __name__ == "__main__":
     ingest()
