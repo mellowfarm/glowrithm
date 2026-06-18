@@ -17,7 +17,7 @@ export default function HomeScreen({ navigation }) {
     style={styles.container}
     contentContainerStyle={styles.content}>
         <Text style={styles.title}>glowrithm 🪷</Text>
-        <Text style={styles.tagline}>a little science, a lot of glow</Text>
+        <Text style={styles.tagline}>your pocket beauty bestie</Text>
         <View style={styles.grid}>
         {features.map((feature) => (
             <TouchableOpacity

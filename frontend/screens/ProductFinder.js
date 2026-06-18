@@ -35,8 +35,8 @@ export default function ProductFinder({navigation}) {
       >
         <Text style={styles.backText}>← back</Text>
       </TouchableOpacity>
-      <Text style={styles.title}>glowrithm 🪷</Text>
-      <Text style={styles.tagline}>your pocket beauty bestie</Text>
+      <Text style={styles.title}>product finder 🧴</Text>
+      <Text style={styles.tagline}>search for anything beauty related!</Text>
       <View style={styles.inputRow}>
         <TextInput
           style={styles.input}

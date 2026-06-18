@@ -1,22 +1,353 @@
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native'
+import { Alert, StyleSheet, Text, TextInput, Image, View, FlatList, Modal, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
+import { useState, useEffect } from 'react'
+import * as ImagePicker from 'expo-image-picker'
+import { supabase } from '../lib/supabase'
 
-export default function IngredientChecker({ navigation }) {
+
+function ProductCard({ product, onDelete }) {
+  const confirmDelete = () => {
+    Alert.alert('delete product', `remove ${product.name} from your stash?`, [
+      { text: 'delete', style: 'destructive', onPress: () => onDelete(product.id) },
+      { text: 'cancel', style: 'cancel' },
+    ])
+  }
+
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.back}>← back</Text>
-      </TouchableOpacity>
-      <Text style={styles.emoji}>🫧</Text>
-      <Text style={styles.title}>my stash</Text>
-      <Text style={styles.sub}>coming soon 🪷</Text>
-    </View>
+    <TouchableOpacity onLongPress={confirmDelete} style={styles.card}>
+      {product.image_url
+        ? <Image source={{ uri: product.image_url }} style={styles.image} />
+        : <View style={styles.image} />
+      }
+      <Text style={styles.brand}>{product.brand}</Text>
+      <Text style={styles.name}>{product.name}</Text>
+    </TouchableOpacity>
   )
 }
 
+export default function MyStash({ navigation }) {
+    const [modalVisible, setModalVisible] = useState(false)
+    const [view, setView] = useState('menu')
+    const [name, setName] = useState('')
+    const [brand, setBrand] = useState('')
+    const [category, setCategory] = useState('')
+    const [ingredients, setIngredients] = useState('')
+    const [productImage, setProductImage] = useState(null)
+    const [products, setProducts] = useState([])
+
+    useEffect(() => {
+        supabase.from('stash').select('*').then(({ data, error }) => {
+            if (data) setProducts(data)
+        })
+    }, [])
+
+    const pickImage = async () => {
+        Alert.alert('add photo', 'choose an option', [
+            {text: 'take a photo', onPress: () => openCamera()},
+            {text: 'choose from library', onPress: () => openLibrary()},
+            {text: 'cancel', style: 'cancel'},
+        ])
+    }
+
+    const openCamera = async () => {
+        const result = await ImagePicker.launchCameraAsync({mediaTypes: ['images']})
+        if (!result.canceled) setProductImage(result.assets[0].uri)
+    }
+
+    const openLibrary = async() => {
+        const result = await ImagePicker.launchImageLibraryAsync({mediaTypes: ['images']})
+        if (!result.canceled) setProductImage(result.assets[0].uri)
+    }
+
+    const deleteProduct = async (id) => {
+        const { error } = await supabase.from('stash').delete().eq('id', id)
+        if (!error) setProducts(products.filter(p => p.id !== id))
+    }
+
+    const saveProduct = async () => {
+        let image_url = null
+
+        if (productImage) {
+            const filename = `${Date.now()}.jpg`
+            const formData = new FormData()
+            formData.append('file', { uri: productImage, name: filename, type: 'image/jpeg' })
+            const { error: uploadError } = await supabase.storage
+                .from('product-images')
+                .upload(filename, formData, { contentType: 'multipart/form-data' })
+            if (uploadError) console.log('upload error:', uploadError)
+            else {
+                const { data: urlData } = supabase.storage
+                    .from('product-images')
+                    .getPublicUrl(filename)
+                image_url = urlData.publicUrl
+            }
+        }
+
+        const { error } = await supabase.from('stash').insert({
+            name, brand, category, ingredients, image_url,
+        })
+        if (error) console.log('error saving:', error)
+        else {
+            const { data } = await supabase.from('stash').select('*')
+            if (data) setProducts(data)
+            setName('')
+            setBrand('')
+            setCategory('')
+            setIngredients('')
+            setProductImage(null)
+            setModalVisible(false)
+            setView('menu')
+        }
+    }
+
+    return (
+        <View style={styles.container}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Text style={styles.back}>← back</Text>
+        </TouchableOpacity>
+
+        {/* title */}
+        <Text style={styles.title}>my stash 🧴</Text>
+        <Text style={styles.sub}>scan your product's ingredient list</Text>
+        
+        {/* product cards */}
+        <FlatList
+            data={products}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => <ProductCard product={item} onDelete={deleteProduct} />}
+            numColumns={2}
+        />
+        
+        {/* add button */}
+        <TouchableOpacity style={styles.addButton}
+            onPress={() => setModalVisible(true)}
+        >
+            <Text style={styles.addButtonText}>+</Text>
+        </TouchableOpacity>
+
+        {/* add new product modal */}
+        <Modal visible={modalVisible} animationType="slide" onDismiss={() => setView('menu')}>
+            <View style={styles.modal}>
+                {view === 'menu' ? (
+                    <>
+                        <Text style={styles.modalTitle}>add a product</Text>
+                        <Text style={styles.modalSubTitle}>add a product to your stash!</Text>
+                        <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
+                            <Text style={styles.closeText}>✕ close</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionButton}>
+                            <Text style={styles.actionEmoji}>📷</Text>
+                            <Text style={styles.actionText}>scan product</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionButton} onPress={() => setView('manual')}>
+                            <Text style={styles.actionEmoji}>✏️</Text>
+                            <Text style={styles.actionText}>fill in manually</Text>
+                        </TouchableOpacity>
+                    </>
+                ) : (
+                    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            <Text style={styles.modalTitle}>fill in manually</Text>
+                            <Text style={styles.modalSubTitle}>fill in all the details of your new product!</Text>
+                            <TouchableOpacity style={styles.closeButton} onPress={() => setView('menu')}>
+                                <Text style={styles.closeText}>← back</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={pickImage} style={styles.imagePicker}>
+                                {productImage ? (
+                                    <Image source={{ uri: productImage }} style={styles.imagePreview} />
+                                ) : (
+                                    <Text style={styles.imagePickerText}>📷 tap to add photo</Text>
+                                )}
+                            </TouchableOpacity>
+                            <TextInput
+                                style={styles.input}
+                                value={name}
+                                onChangeText={(text) => setName(text)}
+                                placeholder="product name"
+                                placeholderTextColor="#C9A99A"
+                            />
+                            <TextInput
+                                style={styles.input}
+                                value={brand}
+                                onChangeText={setBrand}
+                                placeholder="brand"
+                                placeholderTextColor="#C9A99A"
+                            />
+                            <TextInput
+                                style={styles.input}
+                                value={category}
+                                onChangeText={setCategory}
+                                placeholder="category"
+                                placeholderTextColor="#C9A99A"
+                            />
+                            <TextInput
+                                style={styles.input}
+                                value={ingredients}
+                                onChangeText={setIngredients}
+                                placeholder="ingredients"
+                                placeholderTextColor="#C9A99A"
+                            />
+                            <TouchableOpacity style={styles.saveButton} onPress={saveProduct}>
+                                <Text style={styles.saveButtonText}>save to stash</Text>
+                            </TouchableOpacity>
+                        </ScrollView>
+                    </KeyboardAvoidingView>
+                )}
+            </View>
+        </Modal>
+        </View>
+    )
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFF5F7', padding: 24, paddingTop: 60 },
-  back: { color: '#C9A99A', fontSize: 14, marginBottom: 40 },
-  emoji: { fontSize: 60, textAlign: 'center', marginBottom: 16 },
-  title: { fontSize: 28, color: '#5C3D35', fontStyle: 'italic', textAlign: 'center', marginBottom: 8 },
-  sub: { fontSize: 14, color: '#C9A99A', textAlign: 'center' },
+    container: { 
+        flex: 1, 
+        backgroundColor: '#FFF5F7', 
+        padding: 24, paddingTop: 60 
+    },
+    back: { 
+        color: '#C9A99A', 
+        fontSize: 14, 
+        marginBottom: 40 
+    },
+    emoji: { 
+        fontSize: 60, 
+        textAlign: 'center', 
+        marginBottom: 16 
+    },
+    title: { 
+        fontSize: 28, 
+        color: '#5C3D35', 
+        fontStyle: 'italic', 
+        textAlign: 'center', 
+        marginBottom: 8 
+    },
+    sub: { 
+        fontSize: 14, 
+        color: '#C9A99A', 
+        textAlign: 'center',
+        marginBottom: 40,
+        letterSpacing: 1,
+    },
+    card: {
+        width: '48%',
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        margin: '1%',
+    },
+    image: {
+        width: '100%',
+        height: 150,
+        backgroundColor: '#f0e6e6',
+        borderRadius: 12,
+    },
+    brand:{
+        fontSize: 11,
+        color: "#C9A99A",
+        padding: 8,
+    },
+    name: {
+        fontSize: 13,
+        color:'#5C3D35',
+        paddingHorizontal: 8,
+        paddingBottom: 8,
+    },
+    addButton: {
+        position: 'absolute',
+        bottom: 32,
+        alignSelf: 'center',
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#C9A99A',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    addButtonText:{
+        fontSize: 28,
+        color: '#fff',
+    },
+    modal: {
+        flex: 1,
+        backgroundColor: '#FFF5F7',
+        padding: 24,
+        paddingTop: 60,
+    },
+    modalTitle: {
+        fontSize: 28, 
+        color: '#5C3D35', 
+        fontStyle: 'italic', 
+        textAlign: 'center', 
+        marginBottom: 8 
+    },
+    modalSubTitle: {
+        fontSize: 14, 
+        color: '#C9A99A', 
+        textAlign: 'center',
+        marginBottom: 40,
+        letterSpacing: 1,
+    },
+    closeButton: {
+        position: 'absolute',
+        top: 60,
+        right: 24,
+    },
+    closeText: {
+        color: '#C9A99A',
+        fontSize: 14,
+    },
+    actionButton: {
+        backgroundColor: '#7D5A52',
+        borderRadius: 20,
+        padding: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: 40,
+        gap: 12,
+        marginBottom: 16,
+    },
+    actionText: {
+        color: '#FFF5F7',
+        fontStyle: 'italic',
+        fontSize: 16,
+        letterSpacing: 1,
+    },
+    actionEmoji: {
+        fontSize: 48,
+        marginBottom: 4,
+    },
+    input: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 12,
+        color: '#5C3D35',
+        fontSize: 14,
+    },
+    imagePicker: {
+        width: '100%',
+        height: 200,
+        backgroundColor: '#f0e6e6',
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    imagePreview: {
+        width: '100%',
+        height: 200,
+        borderRadius: 16,
+    },
+    saveButton: {
+        backgroundColor: '#C9A99A',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    saveButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontStyle: 'italic',
+        letterSpacing: 1,
+    },
 })
