@@ -1,4 +1,4 @@
-import { Alert, StyleSheet, Text, TextInput, Image, View, FlatList, Modal, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
+import { Alert, StyleSheet, Text, TextInput, Image, View, FlatList, Modal, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native'
 import { useState, useEffect } from 'react'
 import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '../lib/supabase'
@@ -33,6 +33,7 @@ export default function MyStash({ navigation }) {
     const [ingredients, setIngredients] = useState('')
     const [productImage, setProductImage] = useState(null)
     const [products, setProducts] = useState([])
+    const [scanning, setScanning] = useState(false)
 
     useEffect(() => {
         supabase.from('stash').select('*').then(({ data, error }) => {
@@ -99,6 +100,31 @@ export default function MyStash({ navigation }) {
         }
     }
 
+    const scanProduct = async () => {
+        const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], base64: true })
+        if (result.canceled) return
+
+        setView('manual')
+        setScanning(true)
+        
+        try {
+            const response = await fetch('https://recreate-thing-champion.ngrok-free.dev/stash/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: result.assets[0].base64 })
+            })
+            const data = await response.json()
+            setName(data.name)
+            setBrand(data.brand)
+            setCategory(data.category)
+            setIngredients(data.ingredients)
+        } catch (e) {
+            console.log('scan error:', e)
+        } finally {
+            setScanning(false)
+        }
+    }
+
     return (
         <View style={styles.container}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -134,7 +160,7 @@ export default function MyStash({ navigation }) {
                         <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
                             <Text style={styles.closeText}>✕ close</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton}>
+                        <TouchableOpacity style={styles.actionButton} onPress={scanProduct}>
                             <Text style={styles.actionEmoji}>📷</Text>
                             <Text style={styles.actionText}>scan product</Text>
                         </TouchableOpacity>
@@ -146,8 +172,13 @@ export default function MyStash({ navigation }) {
                 ) : (
                     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
                         <ScrollView showsVerticalScrollIndicator={false}>
-                            <Text style={styles.modalTitle}>fill in manually</Text>
-                            <Text style={styles.modalSubTitle}>fill in all the details of your new product!</Text>
+                            <Text style={styles.modalTitle}>
+                                {scanning ? 'scanning... 🔍' : 'add a product'}
+                            </Text>
+                            {scanning && (
+                                <ActivityIndicator color="#C9A99A" style={{ marginBottom: 8 }} />
+                            )}
+                            <Text style={styles.modalSubTitle}>add your new product!</Text>
                             <TouchableOpacity style={styles.closeButton} onPress={() => setView('menu')}>
                                 <Text style={styles.closeText}>← back</Text>
                             </TouchableOpacity>
