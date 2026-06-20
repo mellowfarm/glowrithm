@@ -44,4 +44,9 @@ def scan_product(request: ScanRequest) -> ScanResponse:
         ]
     )
     data = json.loads(response.choices[0].message.content)
-    return ScanResponse(**data)
+    return ScanResponse(
+        name=data.get('name', '').lower(),
+        brand=data.get('brand', '').lower(),
+        category=data.get('category', '').lower(),
+        ingredients=data.get('ingredients', '').lower(),
+    )

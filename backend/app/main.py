@@ -3,7 +3,7 @@
 # 2) plugs in the products router
 
 from fastapi import FastAPI
-from app.api import products, ingredients, stash
+from app.api import products, ingredients, stash, routine
 
 app = FastAPI(title="glowrithm API 🪷")
 
@@ -11,3 +11,4 @@ app = FastAPI(title="glowrithm API 🪷")
 app.include_router(products.router, prefix="/products")
 app.include_router(ingredients.router, prefix="/ingredients")
 app.include_router(stash.router, prefix="/stash")
+app.include_router(routine.router, prefix="/routine")

@@ -4,7 +4,10 @@ import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '../lib/supabase'
 
 
-function ProductCard({ product, onDelete }) {
+const SKINCARE_CATEGORIES = ['cleanser', 'toner', 'essence', 'serum', 'eye cream', 'moisturizer', 'sunscreen', 'face oil', 'face mask', 'lip care']
+const MAKEUP_CATEGORIES = ['concealer', 'foundation', 'blush', 'lipstick', 'eyeshadow', 'mascara']
+
+function ProductCard({ product, onDelete, onEdit }) {
   const confirmDelete = () => {
     Alert.alert('delete product', `remove ${product.name} from your stash?`, [
       { text: 'delete', style: 'destructive', onPress: () => onDelete(product.id) },
@@ -13,7 +16,7 @@ function ProductCard({ product, onDelete }) {
   }
 
   return (
-    <TouchableOpacity onLongPress={confirmDelete} style={styles.card}>
+    <TouchableOpacity onPress={() => onEdit(product)} onLongPress={confirmDelete} style={styles.card}>
       {product.image_url
         ? <Image source={{ uri: product.image_url }} style={styles.image} />
         : <View style={styles.image} />
@@ -34,6 +37,7 @@ export default function MyStash({ navigation }) {
     const [productImage, setProductImage] = useState(null)
     const [products, setProducts] = useState([])
     const [scanning, setScanning] = useState(false)
+    const [editingProduct, setEditingProduct] = useState(null)
 
     useEffect(() => {
         supabase.from('stash').select('*').then(({ data, error }) => {
@@ -59,12 +63,42 @@ export default function MyStash({ navigation }) {
         if (!result.canceled) setProductImage(result.assets[0].uri)
     }
 
+    const openEdit = (product) => {
+        setEditingProduct(product)
+        setName(product.name || '')
+        setBrand(product.brand || '')
+        setCategory(product.category || '')
+        setIngredients(product.ingredients || '')
+        setProductImage(null)
+        setView('manual')
+        setModalVisible(true)
+    }
+
+    const resetForm = () => {
+        setEditingProduct(null)
+        setName('')
+        setBrand('')
+        setCategory('')
+        setIngredients('')
+        setProductImage(null)
+        setModalVisible(false)
+        setView('menu')
+    }
+
     const deleteProduct = async (id) => {
         const { error } = await supabase.from('stash').delete().eq('id', id)
-        if (!error) setProducts(products.filter(p => p.id !== id))
+        if (!error) {
+            setProducts(products.filter(p => p.id !== id))
+            await supabase.from('profiles').update({ routine: null })
+        }
     }
 
     const saveProduct = async () => {
+        if (!name.trim() || !brand.trim() || !category || !ingredients.trim()) {
+            Alert.alert('missing fields', 'please fill in name, brand, category and ingredients before saving!')
+            return
+        }
+
         let image_url = null
 
         if (productImage) {
@@ -83,20 +117,23 @@ export default function MyStash({ navigation }) {
             }
         }
 
-        const { error } = await supabase.from('stash').insert({
-            name, brand, category, ingredients, image_url,
-        })
+        const payload = { name, brand, category, ingredients, ...(image_url && { image_url }) }
+
+        let error
+        if (editingProduct) {
+            ({ error } = await supabase.from('stash').update(payload).eq('id', editingProduct.id))
+        } else {
+            ({ error } = await supabase.from('stash').insert({ ...payload, image_url }))
+        }
+
         if (error) console.log('error saving:', error)
         else {
             const { data } = await supabase.from('stash').select('*')
             if (data) setProducts(data)
-            setName('')
-            setBrand('')
-            setCategory('')
-            setIngredients('')
-            setProductImage(null)
-            setModalVisible(false)
-            setView('menu')
+            if (SKINCARE_CATEGORIES.includes(category)) {
+                await supabase.from('profiles').update({ routine: null })
+            }
+            resetForm()
         }
     }
 
@@ -133,13 +170,13 @@ export default function MyStash({ navigation }) {
 
         {/* title */}
         <Text style={styles.title}>my stash 🧴</Text>
-        <Text style={styles.sub}>scan your product's ingredient list</Text>
+        <Text style={styles.sub}>all your products in one place!</Text>
         
         {/* product cards */}
         <FlatList
             data={products}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <ProductCard product={item} onDelete={deleteProduct} />}
+            renderItem={({ item }) => <ProductCard product={item} onDelete={deleteProduct} onEdit={openEdit} />}
             numColumns={2}
         />
         
@@ -151,13 +188,13 @@ export default function MyStash({ navigation }) {
         </TouchableOpacity>
 
         {/* add new product modal */}
-        <Modal visible={modalVisible} animationType="slide" onDismiss={() => setView('menu')}>
+        <Modal visible={modalVisible} animationType="slide" onDismiss={resetForm}>
             <View style={styles.modal}>
                 {view === 'menu' ? (
                     <>
                         <Text style={styles.modalTitle}>add a product</Text>
                         <Text style={styles.modalSubTitle}>add a product to your stash!</Text>
-                        <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
+                        <TouchableOpacity style={styles.closeButton} onPress={resetForm}>
                             <Text style={styles.closeText}>✕ close</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionButton} onPress={scanProduct}>
@@ -173,14 +210,14 @@ export default function MyStash({ navigation }) {
                     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
                         <ScrollView showsVerticalScrollIndicator={false}>
                             <Text style={styles.modalTitle}>
-                                {scanning ? 'scanning... 🔍' : 'add a product'}
+                                {scanning ? 'scanning... 🔍' : editingProduct ? 'edit product' : 'add a product'}
                             </Text>
                             {scanning && (
                                 <ActivityIndicator color="#C9A99A" style={{ marginBottom: 8 }} />
                             )}
-                            <Text style={styles.modalSubTitle}>add your new product!</Text>
-                            <TouchableOpacity style={styles.closeButton} onPress={() => setView('menu')}>
-                                <Text style={styles.closeText}>← back</Text>
+                            <Text style={styles.modalSubTitle}>{editingProduct ? 'update your product details' : 'add your new product!'}</Text>
+                            <TouchableOpacity style={styles.closeButton} onPress={editingProduct ? resetForm : () => setView('menu')}>
+                                <Text style={styles.closeText}>{editingProduct ? '✕ close' : '← back'}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity onPress={pickImage} style={styles.imagePicker}>
                                 {productImage ? (
@@ -203,22 +240,39 @@ export default function MyStash({ navigation }) {
                                 placeholder="brand"
                                 placeholderTextColor="#C9A99A"
                             />
+                            <Text style={styles.categoryLabel}>skincare</Text>
+                            <View style={styles.categoryRow}>
+                                {SKINCARE_CATEGORIES.map(c => (
+                                    <TouchableOpacity
+                                        key={c}
+                                        style={[styles.categoryChip, category === c && styles.categoryChipSelected]}
+                                        onPress={() => setCategory(c)}
+                                    >
+                                        <Text style={[styles.categoryChipText, category === c && styles.categoryChipTextSelected]}>{c}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                            <Text style={styles.categoryLabel}>makeup</Text>
+                            <View style={styles.categoryRow}>
+                                {MAKEUP_CATEGORIES.map(c => (
+                                    <TouchableOpacity
+                                        key={c}
+                                        style={[styles.categoryChip, category === c && styles.categoryChipSelected]}
+                                        onPress={() => setCategory(c)}
+                                    >
+                                        <Text style={[styles.categoryChipText, category === c && styles.categoryChipTextSelected]}>{c}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
                             <TextInput
-                                style={styles.input}
-                                value={category}
-                                onChangeText={setCategory}
-                                placeholder="category"
-                                placeholderTextColor="#C9A99A"
-                            />
-                            <TextInput
-                                style={styles.input}
+                                style={[styles.input, { marginTop: 16 }]}
                                 value={ingredients}
                                 onChangeText={setIngredients}
                                 placeholder="ingredients"
                                 placeholderTextColor="#C9A99A"
                             />
                             <TouchableOpacity style={styles.saveButton} onPress={saveProduct}>
-                                <Text style={styles.saveButtonText}>save to stash</Text>
+                                <Text style={styles.saveButtonText}>{editingProduct ? 'update product' : 'save to stash'}</Text>
                             </TouchableOpacity>
                         </ScrollView>
                     </KeyboardAvoidingView>
@@ -380,5 +434,37 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontStyle: 'italic',
         letterSpacing: 1,
+    },
+    categoryLabel: {
+        fontSize: 11,
+        color: '#C9A99A',
+        letterSpacing: 1,
+        marginBottom: 8,
+        marginTop: 12,
+    },
+    categoryRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 4,
+    },
+    categoryChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e8d5d0',
+    },
+    categoryChipSelected: {
+        backgroundColor: '#C9A99A',
+        borderColor: '#C9A99A',
+    },
+    categoryChipText: {
+        fontSize: 12,
+        color: '#C9A99A',
+    },
+    categoryChipTextSelected: {
+        color: '#fff',
     },
 })
