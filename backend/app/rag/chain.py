@@ -13,6 +13,29 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
+def filter_docs(docs, query):
+    query = query.lower()
+
+    # category keywords
+    categories = ['cleanser', 'toner', 'serum', 'moisturizer', 'sunscreen', 
+                  'foundation', 'concealer', 'mascara', 'lipstick', 'blush']
+    matched_category = next((c for c in categories if c in query), None)
+
+    # price filter 
+    price_filter = None
+    if 'under $' in query:
+        price_filer = float(query.split('under $')[1].split()[0])
+
+    filtered = docs
+
+    if matched_category:
+        filtered = [d for d in filtered if matched_category in d.metadata.get('category', '').lower()]
+    
+    if price_filter:
+        filtered = [d for d in filtered if float(d.metadata.get('price', '9999').replace('$', '').split()[0]) <= price_filter]
+
+    return filtered if filtered else docs
+
 def get_chain():
     # load api key
     load_dotenv()
@@ -24,7 +47,7 @@ def get_chain():
         embeddings,
         allow_dangerous_deserialization=True
     )
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 4}) # retrieve top 4 most similar chunks
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 20}) 
 
     PRODUCT_PROMPT = ChatPromptTemplate.from_template("""                                 
     You are a knowledgeable and friendly beauty assistant for glowrithm. 
@@ -43,12 +66,22 @@ def get_chain():
     - key ingredients if relevant
     """)
 
-    chain = (
-        {"context": retriever, "question": RunnablePassthrough()}
-        | PRODUCT_PROMPT
-        | ChatOpenAI(model="gpt-4o", temperature=0.3)
-        | StrOutputParser()
-    )
+    def get_answer(query):
+        docs = retriever.invoke(query)
+        filtered = filter_docs(docs, query)
+        context = "\n\n".join([
+            f"{d.page_content}\nCategory: {d.metadata.get('category', '')}\nPrice: {d.metadata.get('price', '')}"
+            for d in filtered
+        ])
 
-    return chain
+        
+        chain = (
+            PRODUCT_PROMPT
+            | ChatOpenAI(model="gpt-4o", temperature=0.3)
+            | StrOutputParser()
+        )
+        
+        return chain.invoke({"context": context, "question": query})
+
+    return get_answer
 

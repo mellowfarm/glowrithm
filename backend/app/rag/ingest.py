@@ -5,7 +5,6 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
@@ -26,23 +25,20 @@ def ingest():
             page_content=f"""
                 Product: {row['name']}
                 Brand: {row['brand']}
-                Category: {row['category']}
-                Price: {row['price']}
                 Ingredients: {row['ingredients']}
                 """.strip(),
-            metadata={"name": row['name'], "brand": row['brand']}
+            metadata={
+                "name": row['name'], 
+                "brand": row['brand'],
+                "category": row['category'],
+                "price": row['price'],
+            }
         )
         docs.append(doc)
 
-    # chunking
-    # some product descriptions + ingredient lists are rly long, the embedding model has a token limit
-    # shorter chunks give more precise retrieval
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    chunks = splitter.split_documents(docs)
-
     # embedding
     embeddings = OpenAIEmbeddings()
-    vectorstore = FAISS.from_documents(chunks, embeddings) # embeds all chunks
+    vectorstore = FAISS.from_documents(docs, embeddings) # embeds all docs
     vectorstore.save_local("data/faiss_index") # stores all vectors like a library so we can search through fast! :-)
     
     print("🪷 done!")

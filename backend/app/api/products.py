@@ -19,6 +19,6 @@ router = APIRouter()
 @router.post("/find")
 def find_products(request: QueryRequest):
     chain = get_chain()
-    answer = chain.invoke(request.query)
+    answer = chain(request.query)
     return QueryResponse(response=answer)
     
